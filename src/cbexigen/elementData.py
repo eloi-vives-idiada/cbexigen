@@ -17,6 +17,11 @@ class ContentType(Enum):
 class Particle:
     prefix: str = ''
     name: str = None
+    # Schema-sourced XML rendering metadata. xml_qualified_name uses Clark
+    # notation when XML decoder output compatibility mode is enabled.
+    xml_local_name: str = None
+    xml_namespace_uri: str = None
+    xml_qualified_name: str = None
     type: str = None
     type_short: str = None
     base_type: str = None

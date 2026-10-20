@@ -1,0 +1,24 @@
+{# Render immediately after a successful character decode and before arrayLen increments. #}
+{%- if xml_is_attribute == 1 %}
+{{ indent * level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * level }}{
+{{ indent * (level + 1) }}error = exi_xml_append_literal(xmlOut, xmlOut_size, " {{ xml_name }}=\"");
+{{ indent * level }}}
+{{ indent * level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * level }}{
+{{ indent * (level + 1) }}error = exi_xml_append_escaped(xmlOut, xmlOut_size, {{ type_chars }}, {{ type_length }});
+{{ indent * level }}}
+{{ indent * level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * level }}{
+{{ indent * (level + 1) }}error = exi_xml_append_literal(xmlOut, xmlOut_size, "\"");
+{{ indent * level }}}
+{%- else %}
+{{ indent * level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * level }}{
+{{ indent * (level + 1) }}error = exi_xml_close_start_tag(xmlOut, xmlOut_size);
+{{ indent * level }}}
+{{ indent * level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * level }}{
+{{ indent * (level + 1) }}error = exi_xml_append_escaped(xmlOut, xmlOut_size, {{ type_chars }}, {{ type_length }});
+{{ indent * level }}}
+{%- endif %}

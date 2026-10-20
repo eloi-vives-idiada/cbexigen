@@ -1,7 +1,11 @@
 {{ indent * level }}{{ decode_comment }}
 {{ indent * level }}if ({{ type_array_len }} < {{ type_define }})
 {{ indent * level }}{
-{{ indent * (level + 1) }}error = {{ decode_fn }}(stream, &{{ type_array }}[{{ type_array_len }}++]);
+{{ indent * (level + 1) }}error = {{ decode_fn }}(stream, &{{ type_array }}[{{ type_array_len }}]{% if generate_xml_output == 1 and decode_is_generated %}, xmlOut, xmlOut_size{% endif %});
+{{ indent * (level + 1) }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * (level + 1) }}{
+{{ indent * (level + 2) }}{{ type_array_len }}++;
+{{ indent * (level + 1) }}}
 {{ indent * level }}}
 {{ indent * level }}else
 {{ indent * level }}{
@@ -9,7 +13,10 @@
 {{ indent * (level + 1) }}error = EXI_ERROR__ARRAY_OUT_OF_BOUNDS;
 {{ indent * level }}}
 {%- if type_option == 1 %}
-{{ indent * level }}{{ type_value }}_isUsed = 1u;
+{{ indent * level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * level }}{
+{{ indent * (level + 1) }}{{ type_value }}_isUsed = 1u;
+{{ indent * level }}}
 {%- endif %}
 {%- if type_loop_breakout == 1 %}
 {{ indent * level }}// LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition

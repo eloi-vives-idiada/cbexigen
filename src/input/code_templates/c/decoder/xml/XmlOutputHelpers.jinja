@@ -1,0 +1,73 @@
+/* XML-output helpers. Render once per generated decoder C file. */
+static int exi_xml_append_bytes(char* xmlOut, size_t xmlOut_size, const char* bytes, size_t bytes_len)
+{
+    size_t output_len = strlen(xmlOut);
+
+    if (output_len >= xmlOut_size || bytes_len > xmlOut_size - output_len - 1u)
+    {
+        return EXI_ERROR__ARRAY_OUT_OF_BOUNDS;
+    }
+
+    memcpy(&xmlOut[output_len], bytes, bytes_len);
+    xmlOut[output_len + bytes_len] = '\0';
+    return EXI_ERROR__NO_ERROR;
+}
+
+static int exi_xml_append_literal(char* xmlOut, size_t xmlOut_size, const char* literal)
+{
+    return exi_xml_append_bytes(xmlOut, xmlOut_size, literal, strlen(literal));
+}
+
+static int exi_xml_close_start_tag(char* xmlOut, size_t xmlOut_size)
+{
+    size_t output_len = strlen(xmlOut);
+
+    if (output_len == 0u || xmlOut[output_len - 1u] != '>')
+    {
+        return exi_xml_append_literal(xmlOut, xmlOut_size, ">");
+    }
+
+    return EXI_ERROR__NO_ERROR;
+}
+
+static int exi_xml_append_escaped(char* xmlOut, size_t xmlOut_size, const char* characters, uint16_t characters_len)
+{
+    uint16_t index;
+    int error = EXI_ERROR__NO_ERROR;
+
+    for (index = 0u; index < characters_len && error == EXI_ERROR__NO_ERROR; index++)
+    {
+        unsigned char character = (unsigned char)characters[index];
+
+        if (!isprint(character))
+        {
+            error = exi_xml_append_literal(xmlOut, xmlOut_size, "?");
+        }
+        else if (character == '&')
+        {
+            error = exi_xml_append_literal(xmlOut, xmlOut_size, "&amp;");
+        }
+        else if (character == '<')
+        {
+            error = exi_xml_append_literal(xmlOut, xmlOut_size, "&lt;");
+        }
+        else if (character == '>')
+        {
+            error = exi_xml_append_literal(xmlOut, xmlOut_size, "&gt;");
+        }
+        else if (character == '\"')
+        {
+            error = exi_xml_append_literal(xmlOut, xmlOut_size, "&quot;");
+        }
+        else if (character == 0x27u)
+        {
+            error = exi_xml_append_literal(xmlOut, xmlOut_size, "&apos;");
+        }
+        else
+        {
+            error = exi_xml_append_bytes(xmlOut, xmlOut_size, (const char*)&characters[index], 1u);
+        }
+    }
+
+    return error;
+}

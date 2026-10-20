@@ -349,10 +349,22 @@ class SchemaAnalyzer(object):
 
         return particle
 
+    @staticmethod
+    def __set_particle_xml_name(particle: Particle, component):
+        """Retain XML names independently of generated C identifier prefixes."""
+        qualified_name = component.name
+        particle.xml_qualified_name = qualified_name
+        particle.xml_local_name = component.local_name
+        if qualified_name and qualified_name.startswith('{') and '}' in qualified_name:
+            particle.xml_namespace_uri = qualified_name[1:qualified_name.index('}')]
+        else:
+            particle.xml_namespace_uri = getattr(component, 'default_namespace', '')
+
     def __get_particle_from_attribute(self, attribute: XsdAttribute):
         particle = Particle(prefix=self.__schema_prefix)
 
         particle.name = attribute.local_name
+        self.__set_particle_xml_name(particle, attribute)
 
         particle.type = self.__get_type_name(attribute)
         particle.type_short = self.__get_type_name_short(attribute)
@@ -417,6 +429,7 @@ class SchemaAnalyzer(object):
             particle.abstract_type = True
 
         particle.name = element.local_name
+        self.__set_particle_xml_name(particle, element)
 
         particle.type = self.__get_type_name(element)
         particle.type_short = self.__get_type_name_short(element)
@@ -480,6 +493,7 @@ class SchemaAnalyzer(object):
             particle.abstract = True
 
         particle.name = substitute.local_name
+        self.__set_particle_xml_name(particle, substitute)
 
         particle.type = self.__get_type_name(substitute)
         particle.type_short = self.__get_type_name_short(substitute)

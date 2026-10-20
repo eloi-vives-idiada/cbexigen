@@ -40,6 +40,8 @@ CONFIG_PARAMS: Dict[str, Union[str, int]] = {
     'apply_optimizations': 0,
     # generate fragment de- and encoder
     'generate_fragments': 0,
+    # generate bounded XML output from decoder events
+    'generate_xml_output': 0,
     # fragment structure definitions
     'fragment_struct_name': 'exiFragment',
     'fragment_parameter_name': 'exiFrag',
@@ -163,6 +165,9 @@ def process_config_parameters():
     # apply fragments
     if hasattr(config_module, 'generate_fragments'):
         CONFIG_PARAMS['generate_fragments'] = config_module.generate_fragments
+    # generate XML output in decoder APIs
+    if hasattr(config_module, 'generate_xml_output'):
+        CONFIG_PARAMS['generate_xml_output'] = config_module.generate_xml_output
 
     ''' fragment structure definitions '''
     # fragment_struct_name

@@ -78,6 +78,9 @@ iso20_array_optimizations = {
 
 # if fragment de- and encoder should be generated, set this value to 1.
 # Currently only complex elements can be added to the fragment coders.
+# Enable bounded XML reconstruction in generated decoder APIs. XML tag names use
+# schema-sourced Clark notation for compatibility with the reference implementation.
+generate_xml_output = 0
 # NOTE! There may be problems when comparing the signature of the eMAID.
 #       In the ISO 15118-2 schema there are two different types with problematic names, EMAIDType and eMAIDType.
 #       The fragment de- and encoder of e.g. openV2G considers this type as generic type

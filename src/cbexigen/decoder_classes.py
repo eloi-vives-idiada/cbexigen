@@ -52,7 +52,8 @@ class ExiDecoderHeader(ExiBaseCoderHeader):
         content = temp.render(function_comment=comment,
                               function_name=function_name,
                               parameter_type=parameter_type,
-                              parameter_name=parameter_name)
+                              parameter_name=parameter_name,
+                              generate_xml_output=self.config['generate_xml_output'])
 
         return content
 
@@ -73,6 +74,8 @@ class ExiDecoderHeader(ExiBaseCoderHeader):
             return
 
         self.__include_content = tools_generator.get_includes_content(self.h_params)
+        if self.config['generate_xml_output'] == 1:
+            self.__include_content = '#include <stddef.h>\n' + self.__include_content
 
         self.__code_content = '\n'
         self.__code_content += self.__get_main_function_content(content_type=ContentType.root)
@@ -114,7 +117,10 @@ class ExiDecoderCode(ExiBaseCoderCode):
         content = 'static '
         content += 'int ' + self.config['decode_function_prefix'] + self.parameters['prefix'] + element_name + '('
         content += 'exi_bitstream_t* stream, '
-        content += 'struct ' + self.parameters['prefix'] + element_name + '* ' + element_name + ')'
+        content += 'struct ' + self.parameters['prefix'] + element_name + '* ' + element_name
+        if self.config['generate_xml_output'] == 1:
+            content += ', char* xmlOut, size_t xmlOut_size'
+        content += ')'
 
         if is_forward_declaration:
             content += ';'
@@ -316,6 +322,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_array=type_array,
                                      type_array_len=type_array_len,
                                      decode_fn=decode_fn,
+                                     decode_is_generated=False,
                                      type_value=type_array,
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
@@ -410,6 +417,9 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_array=detail.particle.max_occurs > 1,
                                      type_array_length=f'{element_typename}->{detail.particle.name}.arrayLen',
                                      type_array_define=detail.particle.prefixed_define_for_array,
+                                     xml_is_attribute=detail.particle.is_attribute,
+                                     xml_name=detail.particle.xml_qualified_name or detail.particle.name,
+                                     generate_xml_output=self.config['generate_xml_output'],
                                      next_grammar_id=next_grammar_id,
                                      indent=self.indent, level=level)
 
@@ -441,6 +451,8 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_array_len_schema=array_length_from_schema,
                                      type_loop_breakout=type_loop_breakout,
                                      decode_fn=decode_fn,
+                                     decode_is_generated=True,
+                                     generate_xml_output=self.config['generate_xml_output'],
                                      next_grammar_id=next_grammar_id,
                                      next_grammar_id_breakout=next_grammar_id_breakout,
                                      indent=self.indent, level=level)
@@ -458,6 +470,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      decode_fn=decode_fn,
                                      type_option=particle.is_optional,
                                      type_value=type_value,
+                                     generate_xml_output=self.config['generate_xml_output'],
                                      next_grammar_id=next_grammar_id,
                                      indent=self.indent, level=level)
 
@@ -477,6 +490,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_option=detail.particle.is_optional,
                                      type_extra=detail.is_extra_grammar,
                                      type_value=type_value,
+                                     generate_xml_output=self.config['generate_xml_output'],
                                      next_grammar_id=next_grammar_id,
                                      indent=self.indent, level=level)
 
@@ -641,13 +655,25 @@ class ExiDecoderCode(ExiBaseCoderCode):
                     # unsupported particle which appears in the event list
                     event_comment = f'// Event: {detail.flag} (None); next={detail.next_grammar}'
 
-                # currently not used, should be removed if it seems not to be useful!
-                # add_debug_code = self.get_status_for_add_debug_code(grammar.element_typename)
-                # type_parameter = CONFIG_PARAMS['decode_function_prefix'] + grammar.element_typename
+                type_level = 5
+                if (self.config['generate_xml_output'] == 1 and detail.particle is not None
+                        and not detail.particle.is_attribute and detail.flag_is_start_or_loop):
+                    type_level += 1
+                type_content = self.__get_type_content(grammar, detail, type_level)
+                if (self.config['generate_xml_output'] == 1 and detail.particle is not None
+                        and not detail.particle.is_attribute and detail.flag_is_start_or_loop):
+                    xml_name = detail.particle.xml_qualified_name or detail.particle.name
+                    open_template = self.generator.get_template('xml/XmlOpenElement.jinja')
+                    close_template = self.generator.get_template('xml/XmlCloseElement.jinja')
+                    type_content = open_template.render(xml_name=xml_name, indent=self.indent, level=5) + \
+                        '\n' + self.indent * 5 + 'if (error == EXI_ERROR__NO_ERROR)\n' + \
+                        self.indent * 5 + '{\n' + type_content + '\n' + self.indent * 5 + '}\n' + \
+                        close_template.render(xml_name=xml_name, indent=self.indent, level=5)
+
                 temp = self.generator.get_template('BaseDecodeCaseEventId.jinja')
                 event_content += temp.render(event_id=detail.event_index,
                                              event_id_comment=event_comment,
-                                             type_content=self.__get_type_content(grammar, detail, 5),
+                                             type_content=type_content,
                                              # add_debug_code=add_debug_code,
                                              # type_parameter=type_parameter,
                                              indent=self.indent, level=level)
@@ -672,8 +698,20 @@ class ExiDecoderCode(ExiBaseCoderCode):
                 event_index = 0
                 for name in names:
                     hits = [x for x in element.particles if x.name == name]
-                    type_content = self.__get_content_decode_namespace_element(element.typename, hits[0],
-                                                                               next_grammar, level + 3)
+                    type_level = level + 3
+                    if self.config['generate_xml_output'] == 1:
+                        type_level += 1
+                    type_content = self.__get_content_decode_namespace_element(
+                        element.typename, hits[0], next_grammar, type_level)
+                    if self.config['generate_xml_output'] == 1:
+                        xml_name = hits[0].xml_qualified_name or hits[0].name
+                        open_template = self.generator.get_template('xml/XmlOpenElement.jinja')
+                        close_template = self.generator.get_template('xml/XmlCloseElement.jinja')
+                        type_content = open_template.render(xml_name=xml_name, indent=self.indent, level=level + 3) + \
+                            '\n' + self.indent * (level + 3) + 'if (error == EXI_ERROR__NO_ERROR)\n' + \
+                            self.indent * (level + 3) + '{\n' + type_content + '\n' + \
+                            self.indent * (level + 3) + '}\n' + \
+                            close_template.render(xml_name=xml_name, indent=self.indent, level=level + 3)
 
                     event_comment = f'// Event: {hits[0].name}'
                     temp = self.generator.get_template('BaseDecodeCaseEventId.jinja')
@@ -753,6 +791,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                    init_function=CONFIG_PARAMS['init_function_prefix'] + element.prefixed_type,
                                    grammar_content=grammar_content,
                                    add_debug_code=self.get_status_for_add_debug_code(element.prefixed_type),
+                                   generate_xml_output=self.config['generate_xml_output'],
                                    indent=self.indent, level=1)
             content += '\n\n'
         else:
@@ -761,6 +800,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                    function_name=CONFIG_PARAMS['decode_function_prefix'] + element.prefixed_type,
                                    struct_type=element.prefixed_type, parameter_name=typename,
                                    add_debug_code=self.get_status_for_add_debug_code(element.prefixed_type),
+                                   generate_xml_output=self.config['generate_xml_output'],
                                    indent=self.indent, level=1)
             content += '\n\n'
 
@@ -780,6 +820,10 @@ class ExiDecoderCode(ExiBaseCoderCode):
         elif len(self.analyzer_data.root_elements) > 1:
             decode_fn = []
             for elem in self.analyzer_data.root_elements:
+                simple_root_is_string = (
+                    (elem.base_type or '').casefold() in ['string', 'id', 'ncname', 'anyuri'] or
+                    (elem.type_short or '').casefold() in ['string', 'id', 'ncname', 'anyuri']
+                )
                 if self.__is_iso20:
                     # TODO: The following if filters the simple types DigestValue, MgmtData and KeyName.
                     #       Simple types has to be decoded directly and not with an decoding function.
@@ -789,16 +833,20 @@ class ExiDecoderCode(ExiBaseCoderCode):
                     prefix_name_short = f'{elem.prefix}{elem.name_short}'
                     if elem.type_definition == 'complex':
                         decode_fn.append([CONFIG_PARAMS['decode_function_prefix'] + elem.prefixed_type,
-                                          parameter_name + '->' + elem.name_short])
+                                          parameter_name + '->' + elem.name_short,
+                                          elem.name or elem.name_short, simple_root_is_string])
                     else:
-                        decode_fn.append([f'{CONFIG_PARAMS["decode_function_prefix"]}{prefix_name_short}', ''])
+                        decode_fn.append([f'{CONFIG_PARAMS["decode_function_prefix"]}{prefix_name_short}', '',
+                                          elem.name or elem.name_short, simple_root_is_string])
                 else:
                     if elem.typename in self.analyzer_data.schema_builtin_types:
                         decode_fn.append([f'{CONFIG_PARAMS["decode_function_prefix"]}{elem.prefix}{elem.name_short}',
-                                          f'{parameter_name}->{elem.prefix}{elem.name_short}'])
+                                          f'{parameter_name}->{elem.prefix}{elem.name_short}',
+                                          elem.name or elem.name_short, simple_root_is_string])
                     else:
                         decode_fn.append([CONFIG_PARAMS['decode_function_prefix'] + elem.prefixed_type,
-                                          parameter_name + '->' + elem.typename])
+                                          parameter_name + '->' + elem.typename,
+                                          elem.name or elem.name_short, simple_root_is_string])
 
             decode_fn.sort()
 
@@ -811,6 +859,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                         init_function=init_fn,
                                         bits_to_read=bits,
                                         decode_functions=decode_fn,
+                                        generate_xml_output=self.config['generate_xml_output'],
                                         indent=self.indent)
             root_content += '\n'
         else:
@@ -837,6 +886,9 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                             bits_to_encode=bits,
                                             function=function,
                                             parameter=parameter, parameter_index=parameter_index,
+                                            xml_name=(self.analyzer_data.root_elements[0].name or
+                                                      self.analyzer_data.root_elements[0].name_short),
+                                            generate_xml_output=self.config['generate_xml_output'],
                                             indent=self.indent)
                 root_content += '\n'
             else:
@@ -870,9 +922,11 @@ class ExiDecoderCode(ExiBaseCoderCode):
             if fragment.name in self.__fragments:
                 function = f'{CONFIG_PARAMS["decode_function_prefix"]}{self.__schema_prefix}{fragment.type}'
                 parameter = f'{parameter_name}->{fragment.name}'
-                decode_fn.append([fragment.name, fragment.namespace, function, parameter])
+                decode_fn.append([fragment.name, fragment.namespace, function, parameter,
+                                  f'{{{fragment.namespace}}}{fragment.name}'])
             else:
-                decode_fn.append([fragment.name, fragment.namespace, '', ''])
+                decode_fn.append([fragment.name, fragment.namespace, '', '',
+                                  f'{{{fragment.namespace}}}{fragment.name}'])
 
         decode_fn.sort()
         end_fragment = len(decode_fn) + 1
@@ -886,6 +940,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                bits_to_read=bits,
                                decode_functions=decode_fn,
                                end_fragment=end_fragment,
+                               generate_xml_output=self.config['generate_xml_output'],
                                indent=self.indent)
         content += '\n'
 
@@ -907,9 +962,11 @@ class ExiDecoderCode(ExiBaseCoderCode):
                 if fragment.type in self.analyzer_data.known_elements.values():
                     function = f'{CONFIG_PARAMS["decode_function_prefix"]}{self.__schema_prefix}{fragment.type}'
                     parameter = f'{parameter_name}->{fragment.name}'
-                    decode_fn.append([fragment.name, fragment.namespace, function, parameter])
+                    decode_fn.append([fragment.name, fragment.namespace, function, parameter,
+                                  f'{{{fragment.namespace}}}{fragment.name}'])
                 else:
-                    decode_fn.append([fragment.name, fragment.namespace, '', ''])
+                    decode_fn.append([fragment.name, fragment.namespace, '', '',
+                                  f'{{{fragment.namespace}}}{fragment.name}'])
 
         decode_fn.sort()
         end_fragment = len(decode_fn) + 1
@@ -923,6 +980,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                bits_to_read=bits,
                                decode_functions=decode_fn,
                                end_fragment=end_fragment,
+                               generate_xml_output=self.config['generate_xml_output'],
                                indent=self.indent)
         content += '\n'
 
@@ -948,7 +1006,12 @@ class ExiDecoderCode(ExiBaseCoderCode):
             return
 
         self.__include_content = tools_generator.get_includes_content(self.c_params)
+        if self.config['generate_xml_output'] == 1:
+            self.__include_content = '#include <stddef.h>\n#include <string.h>\n#include <ctype.h>\n' + self.__include_content
         self.__code_content = ''
+        if self.config['generate_xml_output'] == 1:
+            helper_template = self.generator.get_template('xml/XmlOutputHelpers.jinja')
+            self.__code_content = helper_template.render() + '\n\n'
         self.__function_content = ''
 
         analyzed_elements = {}

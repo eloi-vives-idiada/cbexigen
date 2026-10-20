@@ -1,0 +1,5 @@
+{{ indent * level }}error = exi_xml_close_start_tag(xmlOut, xmlOut_size);
+{{ indent * level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * level }}{
+{{ indent * (level + 1) }}error = exi_xml_append_literal(xmlOut, xmlOut_size, "<{{ xml_name }}");
+{{ indent * level }}}

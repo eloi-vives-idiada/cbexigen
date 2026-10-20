@@ -1,7 +1,23 @@
 {{ function_comment }}
-int {{ function_name }}(exi_bitstream_t* stream, struct {{ struct_type }}* {{ parameter_name }}) {
+int {{ function_name }}(exi_bitstream_t* stream, struct {{ struct_type }}* {{ parameter_name }}{% if generate_xml_output == 1 %}, char* xmlOut, size_t xmlOut_size{% endif %}) {
 {{ indent }}uint32_t eventCode;
+{%- if generate_xml_output == 1 %}
+{{ indent }}int error;
+
+{{ indent }}if (xmlOut == NULL || xmlOut_size == 0u)
+{{ indent }}{
+{{ indent * 2 }}return EXI_ERROR__ARRAY_OUT_OF_BOUNDS;
+{{ indent }}}
+{{ indent }}xmlOut[0] = '\0';
+{{ indent }}error = exi_xml_append_literal(xmlOut, xmlOut_size, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+{{ indent }}if (error != EXI_ERROR__NO_ERROR)
+{{ indent }}{
+{{ indent * 2 }}return error;
+{{ indent }}}
+{{ indent }}error = exi_header_read_and_check(stream);
+{%- else %}
 {{ indent }}int error = exi_header_read_and_check(stream);
+{%- endif %}
 
 {{ indent }}if (error == EXI_ERROR__NO_ERROR)
 {{ indent }}{
@@ -13,12 +29,32 @@ int {{ function_name }}(exi_bitstream_t* stream, struct {{ struct_type }}* {{ pa
 {{ indent * 3 }}error = EXI_ERROR__NOT_IMPLEMENTED_YET;
 {{ indent * 3 }}switch (eventCode)
 {{ indent * 3 }}{
-{%- for comment, namespace, function, parameter in decode_functions %}
+{%- for comment, namespace, function, parameter, xml_name in decode_functions %}
 {{ indent * 3 }}case {{ loop.index0 }}:
 {{ indent * 4 }}// {{ comment }} ({{ namespace }})
 {%- if parameter != '' %}
-{{ indent * 4 }}error = {{ function }}(stream, &{{ parameter }});
-{{ indent * 4 }}{{ parameter }}_isUsed = 1u;
+{%- if generate_xml_output == 1 %}
+{{ indent * 4 }}error = exi_xml_close_start_tag(xmlOut, xmlOut_size);
+{{ indent * 4 }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * 4 }}{
+{{ indent * 5 }}error = exi_xml_append_literal(xmlOut, xmlOut_size, "<{{ xml_name }}");
+{{ indent * 4 }}}
+{{ indent * 4 }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * 4 }}{
+{%- endif %}
+{{ indent * (5 if generate_xml_output == 1 else 4) }}error = {{ function }}(stream, &{{ parameter }}{% if generate_xml_output == 1 %}, xmlOut, xmlOut_size{% endif %});
+{{ indent * (5 if generate_xml_output == 1 else 4) }}{{ parameter }}_isUsed = 1u;
+{%- if generate_xml_output == 1 %}
+{{ indent * 4 }}}
+{{ indent * 4 }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * 4 }}{
+{{ indent * 5 }}error = exi_xml_close_start_tag(xmlOut, xmlOut_size);
+{{ indent * 4 }}}
+{{ indent * 4 }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * 4 }}{
+{{ indent * 5 }}error = exi_xml_append_literal(xmlOut, xmlOut_size, "</{{ xml_name }}>");
+{{ indent * 4 }}}
+{%- endif %}
 {%- endif %}
 {{ indent * 4 }}break;
 {%- endfor %}
