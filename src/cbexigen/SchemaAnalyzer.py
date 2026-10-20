@@ -1150,8 +1150,22 @@ class SchemaAnalyzer(object):
             return
 
         for imp in current_namespace.imports.values():
+            if imp is None:
+                continue
+
+            # Only an imported namespace which groups all its global elements into a single
+            # substitution group (e.g. the ISO 15118-2 MsgBody namespace with BodyElement)
+            # provides the particles of a namespace element. For every other imported
+            # namespace there is nothing to replace.
+            head_element = self.__get_substitution_group_head(imp)
+            if head_element is None:
+                continue
+
+            name = self.__get_namespace_container_type_name(imp, head_element)
+            if name is None:
+                continue
+
             items = []
-            name = imp.complex_types[0].local_name
             for ele in imp.elements.values():
                 particle = self.__get_particle(ele)
                 # min_occurs and is_substitute has to be set to original values
@@ -1162,16 +1176,62 @@ class SchemaAnalyzer(object):
             if len(items) == 0:
                 continue
 
-            # TODO - find a better way not to overwrite HeaderType
-            if name == 'MessageHeaderType':
-                continue
-
             for gen_elem in self.__generate_elements:
                 if gen_elem.type == '{' + imp.default_namespace + '}' + name:
                     gen_elem.particles = items
                     gen_elem.is_in_namespace_elements = True
                     self.__namespace_elements[name] = items
                     break
+
+    @staticmethod
+    def __get_substitution_group_head(imported_schema):
+        """
+            Returns the global element of an imported schema which is the head of the substitution
+            group of all other global elements of that schema, e.g. BodyElement of the
+            ISO 15118-2 MsgBody schema.
+
+            Such a namespace is a container for interchangeable elements, and the element
+            using its container type gets all of them as particles (see
+            __build_namespace_element_lists).
+
+            Returns None if the imported schema does not follow that pattern. Relying on the
+            position of a type or element inside the imported schema is not possible,
+            because the order in the schema maps built by xmlschema is not the schema order.
+        """
+        heads = [element for element in imported_schema.elements.values() if element.abstract]
+        if len(heads) != 1:
+            return None
+
+        head = heads[0]
+        substitutes = [element for element in imported_schema.elements.values() if element is not head]
+        if len(substitutes) == 0:
+            return None
+
+        # every other global element has to be a member of the substitution group
+        for element in substitutes:
+            if element.substitution_group != head.name:
+                return None
+
+        return head
+
+    @staticmethod
+    def __get_namespace_container_type_name(imported_schema, head_element):
+        """
+            Returns the local name of the complex type of the imported schema which holds the
+            substitution group head element, e.g. BodyType for BodyElement.
+            Returns None if no such complex type exists.
+        """
+        for complex_type in imported_schema.complex_types:
+            if complex_type.abstract or complex_type.content_type_label != 'element-only':
+                continue
+            if complex_type.content is None:
+                continue
+
+            for child in complex_type.content.iter_elements():
+                if child.name == head_element.name:
+                    return complex_type.local_name
+
+        return None
 
     def __build_generate_elements_types_list(self):
         xs_namespace = self.__current_schema.namespaces['xs']
@@ -1232,10 +1292,15 @@ class SchemaAnalyzer(object):
                     if particle.is_complex and particle.name in empty_list:
                         particle.parent_type_is_empty = True
 
-    def __get_parent_elements_from_empty_content_element(self, empty_content_element_name):
+    def __get_parent_elements_from_empty_content_element(
+            self, empty_content_element_name, exclude_element_name=None):
         parents = []
 
         for element in self.__generate_elements:
+            # an element can never be a parent of itself
+            if exclude_element_name is not None and element.name_short == exclude_element_name:
+                continue
+
             for particle in element.particles:
                 if particle.name == empty_content_element_name:
                     parents.append(element)
@@ -1271,8 +1336,11 @@ class SchemaAnalyzer(object):
         # the replacements need to be sorted alphabetically
         replacement_list.sort(key=lambda particle_key: particle_key.name)
 
-        # the particles need to be sorted by index, for proper removal
-        particle_list.sort(key=lambda x: x[0])
+        # The particles need to be sorted by index, for proper removal.
+        # Particle is a dataclass, so list.index() matches by value and the same index may have
+        # been collected more than once. Dropping those duplicates avoids removing particles
+        # which are not part of the replacement at all.
+        particle_list = sorted({p_index: p for p_index, p in particle_list}.items())
 
         # sanity-check the particle list for contiguity
         for i, pi in enumerate(particle_list):
@@ -1281,17 +1349,26 @@ class SchemaAnalyzer(object):
                           f"{particle_list[i][1].name}, index {particle_list[i][0]} after " +
                           f"{particle_list[i-1][1].name} index {particle_list[i-1][0]}")
 
-        # drop all the particles listed in particle_list
-        p_index: int
-        for p_index, p in reversed(particle_list):
-            if parent_element.particles[p_index] != p:
-                log_write(f"particle '{p.name}' not found in '{parent_element.name_short}'")
-            del parent_element.particles[p_index]
+        if len(particle_list) > 0:
+            # drop all the particles listed in particle_list
+            p_index: int
+            for p_index, p in reversed(particle_list):
+                if p_index >= len(parent_element.particles):
+                    log_write(f"particle '{p.name}' is out of range in '{parent_element.name_short}'")
+                    continue
+                if parent_element.particles[p_index] != p:
+                    log_write(f"particle '{p.name}' not found in '{parent_element.name_short}'")
+                del parent_element.particles[p_index]
 
-        # insert the replacements at the original position, assuming the lowest original particle
-        # index is now the correct one
-        parent_particles_old_hi = parent_element.particles[p_index:]
-        parent_element.particles = parent_element.particles[:p_index]
+            # insert the replacements at the original position, assuming the lowest original particle
+            # index is now the correct one
+            insert_index = particle_list[0][0]
+        else:
+            # nothing was removed, so the replacements are appended
+            insert_index = len(parent_element.particles)
+
+        parent_particles_old_hi = parent_element.particles[insert_index:]
+        parent_element.particles = parent_element.particles[:insert_index]
         abstract_seq = []
         for part in replacement_list:
             log_write(f'    Add particle from list {part.name}.')
@@ -1410,11 +1487,13 @@ class SchemaAnalyzer(object):
                 log_write('')
                 log_write(f'{element.name_short} ({element.type_short}) has empty content.')
                 if len(element.particles) > 0:
-                    parents = self.__get_parent_elements_from_empty_content_element(element.name_short)
+                    parents = self.__get_parent_elements_from_empty_content_element(
+                        element.name_short, element.name_short)
                     if len(parents) > 0:
                         self.__copy_particles_from_empty_content_elements(element, parents)
                     else:
-                        parents = self.__get_parent_elements_from_empty_content_element(element.particles[0].name)
+                        parents = self.__get_parent_elements_from_empty_content_element(
+                            element.particles[0].name, element.name_short)
                         if len(parents) > 0:
                             self.__copy_particles_from_empty_content_elements_particle(element, parents)
 
