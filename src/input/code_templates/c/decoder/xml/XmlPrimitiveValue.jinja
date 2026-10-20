@@ -1,0 +1,45 @@
+{% if generate_xml_output == 1 %}
+{%- if xml_is_attribute == 1 %}
+{{ indent * xml_level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * xml_level }}{
+{{ indent * (xml_level + 1) }}error = exi_xml_append_literal(xmlOut, xmlOut_size, " {{ xml_name }}=\"");
+{{ indent * xml_level }}}
+{%- else %}
+{{ indent * xml_level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * xml_level }}{
+{{ indent * (xml_level + 1) }}error = exi_xml_close_start_tag(xmlOut, xmlOut_size);
+{{ indent * xml_level }}}
+{%- endif %}
+{{ indent * xml_level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * xml_level }}{
+{%- if xml_value_kind == 'bool' %}
+{{ indent * (xml_level + 1) }}error = exi_xml_append_literal(xmlOut, xmlOut_size, {{ xml_value }} ? "true" : "false");
+{%- elif xml_value_kind == 'uint' %}
+{{ indent * (xml_level + 1) }}error = exi_xml_append_uint64(xmlOut, xmlOut_size, (uint64_t){{ xml_value }});
+{%- elif xml_value_kind == 'int' %}
+{{ indent * (xml_level + 1) }}error = exi_xml_append_int64(xmlOut, xmlOut_size, (int64_t){{ xml_value }});
+{%- elif xml_value_kind == 'signed' %}
+{{ indent * (xml_level + 1) }}error = exi_xml_append_exi_signed(xmlOut, xmlOut_size, &{{ xml_value }});
+{%- elif xml_value_kind == 'hex' %}
+{{ indent * (xml_level + 1) }}error = exi_xml_append_hex(xmlOut, xmlOut_size, {{ xml_value }}, {{ xml_value_length }});
+{%- elif xml_value_kind == 'enum' %}
+{{ indent * (xml_level + 1) }}switch ((uint32_t){{ xml_value }})
+{{ indent * (xml_level + 1) }}{
+{%- for lexical_value in xml_enum_values %}
+{{ indent * (xml_level + 1) }}case {{ loop.index0 }}u:
+{{ indent * (xml_level + 2) }}error = exi_xml_append_literal(xmlOut, xmlOut_size, {{ lexical_value }});
+{{ indent * (xml_level + 2) }}break;
+{%- endfor %}
+{{ indent * (xml_level + 1) }}default:
+{{ indent * (xml_level + 2) }}error = EXI_ERROR__UNKNOWN_EVENT_CODE;
+{{ indent * (xml_level + 2) }}break;
+{{ indent * (xml_level + 1) }}}
+{%- endif %}
+{{ indent * xml_level }}}
+{%- if xml_is_attribute == 1 %}
+{{ indent * xml_level }}if (error == EXI_ERROR__NO_ERROR)
+{{ indent * xml_level }}{
+{{ indent * (xml_level + 1) }}error = exi_xml_append_literal(xmlOut, xmlOut_size, "\"");
+{{ indent * xml_level }}}
+{%- endif %}
+{% endif %}

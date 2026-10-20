@@ -7,6 +7,7 @@
 {{ indent * level }}error = decode_exi_type_hex_binary(stream, &{{ type_content_len }}, &{{ type_content }}[0], {{ type_define }});
 {{ indent * level }}if (error == 0)
 {{ indent * level }}{
+{{ indent * (level + 1) }}{% set xml_level = level + 1 %}{% include "xml/XmlPrimitiveValue.jinja" %}
 {%- if type_array == 1 %}
 {{ indent * (level + 1) }}{{ type_array_length }}++;
 {%- endif %}

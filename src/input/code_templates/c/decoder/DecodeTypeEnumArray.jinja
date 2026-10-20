@@ -11,6 +11,7 @@
 {{ indent * (level + 3) }}if (error == 0)
 {{ indent * (level + 3) }}{
 {{ indent * (level + 4) }}{{ type_value }}[{{ type_array_len }}] = ({{ type_enum }})value;
+{{ indent * (level + 4) }}{% set xml_level = level + 4 %}{% include "xml/XmlPrimitiveValue.jinja" %}
 {{ indent * (level + 4) }}{{ type_array_len }}++;
 {{ indent * (level + 3) }}}
 {{ indent * (level + 2) }}}

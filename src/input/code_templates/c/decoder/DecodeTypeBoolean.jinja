@@ -30,6 +30,7 @@
 {{ indent * (level + 1) }}{
 {{ indent * (level + 2) }}if (eventCode == 0)
 {{ indent * (level + 2) }}{
+{{ indent * (level + 3) }}{% set xml_level = level + 3 %}{% include "xml/XmlPrimitiveValue.jinja" %}
 {{ indent * (level + 3) }}grammar_id = {{ next_grammar_id }};
 {{ indent * (level + 2) }}}
 {{ indent * (level + 2) }}else

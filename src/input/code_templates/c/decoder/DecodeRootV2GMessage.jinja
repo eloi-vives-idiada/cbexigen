@@ -35,7 +35,7 @@ int {{ function_name }}(exi_bitstream_t* stream, struct {{ struct_type }}* {{ pa
 {{ indent * 4 }}error = exi_xml_close_start_tag(xmlOut, xmlOut_size);
 {{ indent * 4 }}if (error == EXI_ERROR__NO_ERROR)
 {{ indent * 4 }}{
-{{ indent * 5 }}error = exi_xml_append_literal(xmlOut, xmlOut_size, "<{{ xml_name }}");
+{{ indent * 5 }}error = exi_xml_append_literal(xmlOut, xmlOut_size, "<{{ xml_name }}{{ xml_namespace_declarations }}");
 {{ indent * 4 }}}
 {{ indent * 4 }}if (error == EXI_ERROR__NO_ERROR)
 {{ indent * 4 }}{

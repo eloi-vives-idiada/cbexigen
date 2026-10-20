@@ -2,7 +2,7 @@
 # Copyright (c) 2022 - 2023 chargebyte GmbH
 # Copyright (c) 2022 - 2023 Contributors to EVerest
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from cbexigen.tools_config import CONFIG_PARAMS
 
@@ -43,6 +43,8 @@ class Particle:
     is_attribute: bool = False
     is_simple_content: bool = False
     enum_count: int = -1
+    # Schema lexical tokens, indexed by the EXI enum value.
+    enum_values: list = field(default_factory=list)
     # additional flag if content model is choice and changed min occurrence
     content_model_changed_restrictions: bool = False
     # additional flag if parent content model is sequence and changed occurrence

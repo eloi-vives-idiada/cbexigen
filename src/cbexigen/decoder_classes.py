@@ -2,6 +2,7 @@
 # Copyright (c) 2022 - 2023 chargebyte GmbH
 # Copyright (c) 2022 - 2023 Contributors to EVerest
 
+import json
 from typing import List
 from cbexigen.base_coder_classes import ExiBaseCoderHeader, ExiBaseCoderCode
 from cbexigen import tools_generator, tools
@@ -109,6 +110,75 @@ class ExiDecoderCode(ExiBaseCoderCode):
         self.__include_content = ''
         self.__code_content = ''
         self.__function_content = ''
+        self.__xml_namespace_prefixes = {}
+        self.__xml_namespace_declarations = ''
+
+    def __build_xml_namespace_plan(self):
+        """Assign stable lexical prefixes in root/schema/generator traversal order."""
+        discovered_namespaces = []
+
+        def add_qname(qname):
+            if not qname or not qname.startswith('{') or '}' not in qname:
+                return
+            namespace = qname[1:qname.index('}')]
+            if namespace and namespace not in discovered_namespaces:
+                discovered_namespaces.append(namespace)
+
+        # The document root is deliberately visited first, making its namespace ns1.
+        for element in self.analyzer_data.root_elements:
+            add_qname(element.name)
+        for element in self.analyzer_data.generate_elements:
+            add_qname(element.name)
+            for particle in element.particles:
+                add_qname(particle.xml_qualified_name)
+        for fragment in self.analyzer_data.known_fragments.values():
+            add_qname(f'{{{fragment.namespace}}}{fragment.name}')
+
+        # DIN's schema imports have a semantic order that is obscured by the
+        # generator's type dependency order. Retain the declared core order
+        # before assigning the remaining discovered namespaces.
+        if self.__schema_prefix == 'din_':
+            din_namespace_order = ('MsgDef', 'MsgHeader', 'MsgBody', 'MsgDataTypes')
+            ordered = [namespace for suffix in din_namespace_order
+                       for namespace in discovered_namespaces if namespace.endswith(suffix)]
+            discovered_namespaces = ordered + [
+                namespace for namespace in discovered_namespaces if namespace not in ordered]
+
+        self.__xml_namespace_prefixes = {
+            namespace: f'ns{index}' for index, namespace in enumerate(discovered_namespaces, start=1)
+        }
+        self.__xml_namespace_declarations = ''.join(
+            f' xmlns:{prefix}=\\"{namespace}\\"'
+            for namespace, prefix in self.__xml_namespace_prefixes.items())
+
+    def __xml_name(self, qualified_name, local_name=None):
+        if not qualified_name:
+            return local_name or ''
+        if qualified_name.startswith('{') and '}' in qualified_name:
+            namespace, local = qualified_name[1:].split('}', 1)
+            prefix = self.__xml_namespace_prefixes.get(namespace)
+            return f'{prefix}:{local}' if prefix else local
+        return local_name or qualified_name
+
+    def __xml_particle_name(self, particle: Particle):
+        if particle.is_any or particle.is_simple_content:
+            return ''
+        return self.__xml_name(particle.xml_qualified_name, particle.xml_local_name or particle.name)
+
+    @staticmethod
+    def __xml_enum_values(particle: Particle):
+        return [json.dumps(str(value)) for value in particle.enum_values]
+
+    def __xml_primitive_context(self, particle: Particle, kind: str, value: str, value_length=None):
+        return {
+            'generate_xml_output': self.config['generate_xml_output'],
+            'xml_is_attribute': particle.is_attribute,
+            'xml_name': self.__xml_particle_name(particle),
+            'xml_value_kind': kind,
+            'xml_value': value,
+            'xml_value_length': value_length,
+            'xml_enum_values': self.__xml_enum_values(particle),
+        }
 
     # ---------------------------------------------------------------------------
     # generator helper functions
@@ -154,6 +224,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_define=type_define,
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(detail.particle, 'hex', type_content, type_content_len),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -175,6 +246,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_define=type_define,
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(detail.particle, 'hex', type_content, type_content_len),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -218,6 +290,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_array_length=f'{element_typename}->{detail.particle.name}.arrayLen',
                                      type_array_define=detail.particle.prefixed_define_for_array,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(detail.particle, 'hex', type_content, type_content_len),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -235,6 +308,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_value=type_value,
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(detail.particle, 'bool', type_value),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -257,6 +331,8 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_int=tools.TYPE_TRANSLATION_C[detail.particle.integer_base_type],
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(
+                                         detail.particle, 'uint' if detail.particle.integer_is_unsigned else 'int', type_value),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -277,6 +353,8 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_int=tools.TYPE_TRANSLATION_C[detail.particle.integer_base_type],
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(
+                                         detail.particle, 'uint' if detail.particle.integer_is_unsigned else 'int', type_value),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -299,6 +377,8 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_value=type_value,
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(
+                                         detail.particle, 'uint' if detail.particle.integer_is_unsigned else 'int', type_value),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -326,6 +406,9 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_value=type_array,
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(
+                                         detail.particle, 'uint' if detail.particle.integer_is_unsigned else 'int',
+                                         f'{type_array}[{type_array_len}]'),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -347,6 +430,8 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_value=type_value,
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(
+                                         detail.particle, 'uint' if detail.particle.integer_is_unsigned else 'int', type_value),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -368,6 +453,8 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_value=type_value,
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(
+                                         detail.particle, 'uint' if detail.particle.integer_is_unsigned else 'int', type_value),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -385,6 +472,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_value=type_value,
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(detail.particle, 'signed', type_value),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -418,7 +506,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_array_length=f'{element_typename}->{detail.particle.name}.arrayLen',
                                      type_array_define=detail.particle.prefixed_define_for_array,
                                      xml_is_attribute=detail.particle.is_attribute,
-                                     xml_name=detail.particle.xml_qualified_name or detail.particle.name,
+                                     xml_name=self.__xml_particle_name(detail.particle),
                                      generate_xml_output=self.config['generate_xml_output'],
                                      next_grammar_id=next_grammar_id,
                                      indent=self.indent, level=level)
@@ -514,6 +602,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_value=type_value,
                                      type_enum=type_enum,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(detail.particle, 'enum', f'{type_value}[{type_array_len}]'),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -534,6 +623,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_value=type_value,
                                      type_enum=type_enum,
                                      next_grammar_id=next_grammar_id,
+                                     **self.__xml_primitive_context(detail.particle, 'enum', type_value),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -657,12 +747,14 @@ class ExiDecoderCode(ExiBaseCoderCode):
 
                 type_level = 5
                 if (self.config['generate_xml_output'] == 1 and detail.particle is not None
-                        and not detail.particle.is_attribute and detail.flag_is_start_or_loop):
+                        and not detail.particle.is_attribute and not detail.is_any
+                        and not detail.particle.is_simple_content and detail.flag_is_start_or_loop):
                     type_level += 1
                 type_content = self.__get_type_content(grammar, detail, type_level)
                 if (self.config['generate_xml_output'] == 1 and detail.particle is not None
-                        and not detail.particle.is_attribute and detail.flag_is_start_or_loop):
-                    xml_name = detail.particle.xml_qualified_name or detail.particle.name
+                        and not detail.particle.is_attribute and not detail.is_any
+                        and not detail.particle.is_simple_content and detail.flag_is_start_or_loop):
+                    xml_name = self.__xml_particle_name(detail.particle)
                     open_template = self.generator.get_template('xml/XmlOpenElement.jinja')
                     close_template = self.generator.get_template('xml/XmlCloseElement.jinja')
                     type_content = open_template.render(xml_name=xml_name, indent=self.indent, level=5) + \
@@ -704,7 +796,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                     type_content = self.__get_content_decode_namespace_element(
                         element.typename, hits[0], next_grammar, type_level)
                     if self.config['generate_xml_output'] == 1:
-                        xml_name = hits[0].xml_qualified_name or hits[0].name
+                        xml_name = self.__xml_particle_name(hits[0])
                         open_template = self.generator.get_template('xml/XmlOpenElement.jinja')
                         close_template = self.generator.get_template('xml/XmlCloseElement.jinja')
                         type_content = open_template.render(xml_name=xml_name, indent=self.indent, level=level + 3) + \
@@ -834,19 +926,19 @@ class ExiDecoderCode(ExiBaseCoderCode):
                     if elem.type_definition == 'complex':
                         decode_fn.append([CONFIG_PARAMS['decode_function_prefix'] + elem.prefixed_type,
                                           parameter_name + '->' + elem.name_short,
-                                          elem.name or elem.name_short, simple_root_is_string])
+                                          self.__xml_name(elem.name, elem.name_short), simple_root_is_string])
                     else:
                         decode_fn.append([f'{CONFIG_PARAMS["decode_function_prefix"]}{prefix_name_short}', '',
-                                          elem.name or elem.name_short, simple_root_is_string])
+                                          self.__xml_name(elem.name, elem.name_short), simple_root_is_string])
                 else:
                     if elem.typename in self.analyzer_data.schema_builtin_types:
                         decode_fn.append([f'{CONFIG_PARAMS["decode_function_prefix"]}{elem.prefix}{elem.name_short}',
                                           f'{parameter_name}->{elem.prefix}{elem.name_short}',
-                                          elem.name or elem.name_short, simple_root_is_string])
+                                          self.__xml_name(elem.name, elem.name_short), simple_root_is_string])
                     else:
                         decode_fn.append([CONFIG_PARAMS['decode_function_prefix'] + elem.prefixed_type,
                                           parameter_name + '->' + elem.typename,
-                                          elem.name or elem.name_short, simple_root_is_string])
+                                          self.__xml_name(elem.name, elem.name_short), simple_root_is_string])
 
             decode_fn.sort()
 
@@ -859,6 +951,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                         init_function=init_fn,
                                         bits_to_read=bits,
                                         decode_functions=decode_fn,
+                                        xml_namespace_declarations=self.__xml_namespace_declarations,
                                         generate_xml_output=self.config['generate_xml_output'],
                                         indent=self.indent)
             root_content += '\n'
@@ -886,8 +979,9 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                             bits_to_encode=bits,
                                             function=function,
                                             parameter=parameter, parameter_index=parameter_index,
-                                            xml_name=(self.analyzer_data.root_elements[0].name or
-                                                      self.analyzer_data.root_elements[0].name_short),
+                                            xml_name=self.__xml_name(self.analyzer_data.root_elements[0].name,
+                                                                     self.analyzer_data.root_elements[0].name_short),
+                                            xml_namespace_declarations=self.__xml_namespace_declarations,
                                             generate_xml_output=self.config['generate_xml_output'],
                                             indent=self.indent)
                 root_content += '\n'
@@ -923,10 +1017,10 @@ class ExiDecoderCode(ExiBaseCoderCode):
                 function = f'{CONFIG_PARAMS["decode_function_prefix"]}{self.__schema_prefix}{fragment.type}'
                 parameter = f'{parameter_name}->{fragment.name}'
                 decode_fn.append([fragment.name, fragment.namespace, function, parameter,
-                                  f'{{{fragment.namespace}}}{fragment.name}'])
+                                  self.__xml_name(f'{{{fragment.namespace}}}{fragment.name}', fragment.name)])
             else:
                 decode_fn.append([fragment.name, fragment.namespace, '', '',
-                                  f'{{{fragment.namespace}}}{fragment.name}'])
+                                  self.__xml_name(f'{{{fragment.namespace}}}{fragment.name}', fragment.name)])
 
         decode_fn.sort()
         end_fragment = len(decode_fn) + 1
@@ -940,6 +1034,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                bits_to_read=bits,
                                decode_functions=decode_fn,
                                end_fragment=end_fragment,
+                               xml_namespace_declarations=self.__xml_namespace_declarations,
                                generate_xml_output=self.config['generate_xml_output'],
                                indent=self.indent)
         content += '\n'
@@ -963,10 +1058,10 @@ class ExiDecoderCode(ExiBaseCoderCode):
                     function = f'{CONFIG_PARAMS["decode_function_prefix"]}{self.__schema_prefix}{fragment.type}'
                     parameter = f'{parameter_name}->{fragment.name}'
                     decode_fn.append([fragment.name, fragment.namespace, function, parameter,
-                                  f'{{{fragment.namespace}}}{fragment.name}'])
+                                  self.__xml_name(f'{{{fragment.namespace}}}{fragment.name}', fragment.name)])
                 else:
                     decode_fn.append([fragment.name, fragment.namespace, '', '',
-                                  f'{{{fragment.namespace}}}{fragment.name}'])
+                                  self.__xml_name(f'{{{fragment.namespace}}}{fragment.name}', fragment.name)])
 
         decode_fn.sort()
         end_fragment = len(decode_fn) + 1
@@ -980,6 +1075,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                bits_to_read=bits,
                                decode_functions=decode_fn,
                                end_fragment=end_fragment,
+                               xml_namespace_declarations=self.__xml_namespace_declarations,
                                generate_xml_output=self.config['generate_xml_output'],
                                indent=self.indent)
         content += '\n'
@@ -1010,6 +1106,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
             self.__include_content = '#include <stddef.h>\n#include <string.h>\n#include <ctype.h>\n' + self.__include_content
         self.__code_content = ''
         if self.config['generate_xml_output'] == 1:
+            self.__build_xml_namespace_plan()
             helper_template = self.generator.get_template('xml/XmlOutputHelpers.jinja')
             self.__code_content = helper_template.render() + '\n\n'
         self.__function_content = ''

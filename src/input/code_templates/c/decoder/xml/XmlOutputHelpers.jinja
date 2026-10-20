@@ -21,10 +21,19 @@ static int exi_xml_append_literal(char* xmlOut, size_t xmlOut_size, const char* 
 static int exi_xml_close_start_tag(char* xmlOut, size_t xmlOut_size)
 {
     size_t output_len = strlen(xmlOut);
+    size_t index;
 
-    if (output_len == 0u || xmlOut[output_len - 1u] != '>')
+    /* Scan backwards: the final byte may be text, not an open start tag. */
+    for (index = output_len; index > 0u; index--)
     {
-        return exi_xml_append_literal(xmlOut, xmlOut_size, ">");
+        if (xmlOut[index - 1u] == '>')
+        {
+            return EXI_ERROR__NO_ERROR;
+        }
+        if (xmlOut[index - 1u] == '<')
+        {
+            return exi_xml_append_literal(xmlOut, xmlOut_size, ">");
+        }
     }
 
     return EXI_ERROR__NO_ERROR;
@@ -70,4 +79,122 @@ static int exi_xml_append_escaped(char* xmlOut, size_t xmlOut_size, const char* 
     }
 
     return error;
+}
+
+static int exi_xml_append_uint64(char* xmlOut, size_t xmlOut_size, uint64_t value)
+{
+    char digits[20];
+    size_t count = 0u;
+
+    do
+    {
+        digits[count++] = (char)('0' + (value % 10u));
+        value /= 10u;
+    } while (value != 0u);
+
+    while (count > 0u)
+    {
+        int error;
+        count--;
+        error = exi_xml_append_bytes(xmlOut, xmlOut_size, &digits[count], 1u);
+        if (error != EXI_ERROR__NO_ERROR)
+        {
+            return error;
+        }
+    }
+
+    return EXI_ERROR__NO_ERROR;
+}
+
+static int exi_xml_append_int64(char* xmlOut, size_t xmlOut_size, int64_t value)
+{
+    if (value < 0)
+    {
+        int error = exi_xml_append_literal(xmlOut, xmlOut_size, "-");
+        uint64_t magnitude = (uint64_t)(-(value + 1)) + 1u;
+        if (error != EXI_ERROR__NO_ERROR)
+        {
+            return error;
+        }
+        return exi_xml_append_uint64(xmlOut, xmlOut_size, magnitude);
+    }
+
+    return exi_xml_append_uint64(xmlOut, xmlOut_size, (uint64_t)value);
+}
+
+static int exi_xml_append_hex(char* xmlOut, size_t xmlOut_size, const uint8_t* bytes, uint16_t bytes_len)
+{
+    static const char hex_digits[] = "0123456789ABCDEF";
+    uint16_t index;
+
+    for (index = 0u; index < bytes_len; index++)
+    {
+        char pair[2];
+        int error;
+        pair[0] = hex_digits[(bytes[index] >> 4u) & 0x0Fu];
+        pair[1] = hex_digits[bytes[index] & 0x0Fu];
+        error = exi_xml_append_bytes(xmlOut, xmlOut_size, pair, sizeof(pair));
+        if (error != EXI_ERROR__NO_ERROR)
+        {
+            return error;
+        }
+    }
+
+    return EXI_ERROR__NO_ERROR;
+}
+
+static int exi_xml_append_exi_signed(char* xmlOut, size_t xmlOut_size, const exi_signed_t* value)
+{
+    uint8_t decimal_digits[EXI_BASETYPES_MAX_OCTETS_SUPPORTED * 3u + 1u] = {0u};
+    size_t digit_count = 1u;
+    size_t octet_index;
+    int error;
+
+    if (value->data.octets_count > EXI_BASETYPES_MAX_OCTETS_SUPPORTED)
+    {
+        return EXI_ERROR__OCTET_COUNT_LARGER_THAN_TYPE_SUPPORTS;
+    }
+
+    for (octet_index = value->data.octets_count; octet_index > 0u; octet_index--)
+    {
+        uint16_t carry = value->data.octets[octet_index - 1u] & EXI_BASETYPES_OCTET_SEQ_VALUE_MASK;
+        size_t digit_index;
+        for (digit_index = 0u; digit_index < digit_count; digit_index++)
+        {
+            uint16_t product = (uint16_t)decimal_digits[digit_index] * 128u + carry;
+            decimal_digits[digit_index] = (uint8_t)(product % 10u);
+            carry = product / 10u;
+        }
+        while (carry != 0u)
+        {
+            if (digit_count >= sizeof(decimal_digits))
+            {
+                return EXI_ERROR__ARRAY_OUT_OF_BOUNDS;
+            }
+            decimal_digits[digit_count++] = (uint8_t)(carry % 10u);
+            carry /= 10u;
+        }
+    }
+
+    if (value->is_negative != 0u && !(digit_count == 1u && decimal_digits[0] == 0u))
+    {
+        error = exi_xml_append_literal(xmlOut, xmlOut_size, "-");
+        if (error != EXI_ERROR__NO_ERROR)
+        {
+            return error;
+        }
+    }
+    while (digit_count > 0u)
+    {
+        char digit;
+        digit_count--;
+        digit = (char)('0' + decimal_digits[digit_count]);
+        error = exi_xml_append_bytes(xmlOut, xmlOut_size, &digit, 1u);
+        if (error != EXI_ERROR__NO_ERROR)
+        {
+            return error;
+        }
+    }
+
+    return EXI_ERROR__NO_ERROR;
 }

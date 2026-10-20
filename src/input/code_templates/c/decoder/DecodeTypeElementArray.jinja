@@ -4,6 +4,9 @@
 {{ indent * (level + 1) }}error = {{ decode_fn }}(stream, &{{ type_array }}[{{ type_array_len }}]{% if generate_xml_output == 1 and decode_is_generated %}, xmlOut, xmlOut_size{% endif %});
 {{ indent * (level + 1) }}if (error == EXI_ERROR__NO_ERROR)
 {{ indent * (level + 1) }}{
+{%- if not decode_is_generated %}
+{{ indent * (level + 2) }}{% set xml_level = level + 2 %}{% include "xml/XmlPrimitiveValue.jinja" %}
+{%- endif %}
 {{ indent * (level + 2) }}{{ type_array_len }}++;
 {{ indent * (level + 1) }}}
 {{ indent * level }}}

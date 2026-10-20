@@ -400,6 +400,7 @@ class SchemaAnalyzer(object):
             if attribute.type.enumeration is not None:
                 particle.is_enum = True
                 particle.enum_count = len(attribute.type.enumeration)
+                particle.enum_values = [str(value) for value in attribute.type.enumeration]
 
                 element_data = self.__get_element_data_from_enum_attribute(attribute)
                 self.__generate_elements.append(element_data)
@@ -479,6 +480,7 @@ class SchemaAnalyzer(object):
             if element.type.enumeration is not None:
                 particle.is_enum = True
                 particle.enum_count = len(element.type.enumeration)
+                particle.enum_values = [str(value) for value in element.type.enumeration]
 
         self.__get_particle_integer_properties(particle, element)
 
@@ -539,6 +541,7 @@ class SchemaAnalyzer(object):
             if substitute.type.enumeration is not None:
                 particle.is_enum = True
                 particle.enum_count = len(substitute.type.enumeration)
+                particle.enum_values = [str(value) for value in substitute.type.enumeration]
 
         self.__get_particle_integer_properties(particle, element)
 

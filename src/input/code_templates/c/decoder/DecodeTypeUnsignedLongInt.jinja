@@ -5,5 +5,6 @@
 {%- if type_option == 1 %}
 {{ indent * (level + 1) }}{{ type_value }}_isUsed = 1u;
 {%- endif %}
+{{ indent * (level + 1) }}{% set xml_level = level + 1 %}{% include "xml/XmlPrimitiveValue.jinja" %}
 {{ indent * (level + 1) }}grammar_id = {{ next_grammar_id }};
 {{ indent * level }}}
