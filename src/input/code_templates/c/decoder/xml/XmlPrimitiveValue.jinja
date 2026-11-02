@@ -22,6 +22,8 @@
 {{ indent * (xml_level + 1) }}error = exi_xml_append_exi_signed(xmlOut, xmlOut_size, &{{ xml_value }});
 {%- elif xml_value_kind == 'hex' %}
 {{ indent * (xml_level + 1) }}error = exi_xml_append_hex(xmlOut, xmlOut_size, {{ xml_value }}, {{ xml_value_length }});
+{%- elif xml_value_kind == 'base64' %}
+{{ indent * (xml_level + 1) }}error = exi_xml_append_base64(xmlOut, xmlOut_size, {{ xml_value }}, {{ xml_value_length }});
 {%- elif xml_value_kind == 'enum' %}
 {{ indent * (xml_level + 1) }}switch ((uint32_t){{ xml_value }})
 {{ indent * (xml_level + 1) }}{

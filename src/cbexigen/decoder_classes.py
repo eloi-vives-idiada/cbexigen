@@ -246,7 +246,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_define=type_define,
                                      type_option=detail.particle.is_optional,
                                      next_grammar_id=next_grammar_id,
-                                     **self.__xml_primitive_context(detail.particle, 'hex', type_content, type_content_len),
+                                     **self.__xml_primitive_context(detail.particle, 'base64', type_content, type_content_len),
                                      indent=self.indent, level=level)
 
         return decode_content
@@ -290,7 +290,7 @@ class ExiDecoderCode(ExiBaseCoderCode):
                                      type_array_length=f'{element_typename}->{detail.particle.name}.arrayLen',
                                      type_array_define=detail.particle.prefixed_define_for_array,
                                      next_grammar_id=next_grammar_id,
-                                     **self.__xml_primitive_context(detail.particle, 'hex', type_content, type_content_len),
+                                     **self.__xml_primitive_context(detail.particle, 'base64', type_content, type_content_len),
                                      indent=self.indent, level=level)
 
         return decode_content

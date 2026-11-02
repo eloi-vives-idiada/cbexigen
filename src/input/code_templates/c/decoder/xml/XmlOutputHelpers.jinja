@@ -143,6 +143,41 @@ static int exi_xml_append_hex(char* xmlOut, size_t xmlOut_size, const uint8_t* b
     return EXI_ERROR__NO_ERROR;
 }
 
+static int exi_xml_append_base64(char* xmlOut, size_t xmlOut_size, const uint8_t* bytes, uint16_t bytes_len)
+{
+    static const char base64_digits[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t output_len = strlen(xmlOut);
+    size_t encoded_len = ((size_t)bytes_len + 2u) / 3u * 4u;
+    uint16_t index;
+
+    if (output_len >= xmlOut_size || encoded_len > xmlOut_size - output_len - 1u)
+    {
+        return EXI_ERROR__ARRAY_OUT_OF_BOUNDS;
+    }
+
+    for (index = 0u; index < bytes_len; index = (uint16_t)(index + 3u))
+    {
+        size_t remaining = (size_t)bytes_len - index;
+        uint32_t group = (uint32_t)bytes[index] << 16u;
+        if (remaining > 1u)
+        {
+            group |= (uint32_t)bytes[index + 1u] << 8u;
+        }
+        if (remaining > 2u)
+        {
+            group |= (uint32_t)bytes[index + 2u];
+        }
+
+        xmlOut[output_len++] = base64_digits[(group >> 18u) & 0x3Fu];
+        xmlOut[output_len++] = base64_digits[(group >> 12u) & 0x3Fu];
+        xmlOut[output_len++] = (remaining > 1u) ? base64_digits[(group >> 6u) & 0x3Fu] : '=';
+        xmlOut[output_len++] = (remaining > 2u) ? base64_digits[group & 0x3Fu] : '=';
+    }
+
+    xmlOut[output_len] = '\0';
+    return EXI_ERROR__NO_ERROR;
+}
+
 static int exi_xml_append_exi_signed(char* xmlOut, size_t xmlOut_size, const exi_signed_t* value)
 {
     uint8_t decimal_digits[EXI_BASETYPES_MAX_OCTETS_SUPPORTED * 3u + 1u] = {0u};
